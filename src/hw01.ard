@@ -2,6 +2,10 @@
 --    В IDEA можно просто импортировать данный проект.
 
 -- 2. Определите аналоги следующих функций на языке хаскелл.
+\func second (x y z : Nat) : Nat => y
+\func apply (f : Nat -> Nat) (x : Nat) : Nat => f x
+\func compose (f : Nat -> Nat) (g : Nat -> Nat) (x : Nat) => f (g x)
+\func flip (f : Nat -> Nat -> Nat) (x : Nat) (y : Nat) => f y x
 {- Haskell:
    second :: Nat -> Nat -> Nat -> Nat
    second _ y _ = y
@@ -24,9 +28,9 @@
 
 \func f1 (x y : Nat) => x
 \func f2 : Nat => 0
-\func f3 (f : Nat -> Nat) (z : Nat) : Int => 0
+\func \infix 1 f3 (f : Nat -> Nat) (z : Nat) : Int => 0
 \func f4 : Nat => 0
-\func f5 => f1
+\func \infix 2 f5 => f1
 \func f6 => f4
 
 \func test => f1 f2 f3 f4 f5 f6
@@ -38,20 +42,64 @@
    if False _ e = e
 -}
 
--- 5. Определите || через if.
+\func if (_ _ _ : Bool) : Bool
+    | true, t, _ => t
+    | false, _, f => f
 
-\func \infixr 2 || (x y : Bool) : Bool => {?}
+-- 5. Определите  через if.
+
+\func \infixr 2 || (x y : Bool) : Bool => if x true y
+
+\func orTest1 : true || false = true => idp
+\func orTest2 : true || true = true => idp
+\func orTest3 : false || false = false => idp
+\func orTest4 : false || true = true => idp
+
 
 -- 6. Определите возведение в степень и факториал для натуральных чисел.
 
 \open Nat \hiding (-,div) -- Здесь лежат + и *.
 
-\func \infixr 8 ^ (x y : Nat) => {?}
+\func \infixr 8 ^ (x y : Nat) : Nat \elim y
+    | zero => suc zero
+    | suc y => x * (x ^ y)
 
-\func fac (x : Nat) => {?}
+\func powTest1 : 2 ^ 2 = 4 => idp
+\func powTest2 : 3 ^ 2 = 9 => idp
+
+\func fac (x : Nat) : Nat
+    | zero => suc zero
+    | suc x' \as x => x * fac x'
+
+\func facTest1 : fac 3 = 6 => idp
+\func facTest2 : fac 4 = 24 => idp
 
 -- 7. Определите mod и gcd.
 
-\func mod (x y : Nat) => {?}
+\func \infixl 1 == (x y : Nat) : Bool
+    | zero, zero => true
+    | suc x, suc y => x == y
+    | _, _ => false
 
-\func gcd (x y : Nat) => {?}
+\func ifn (_ : Bool) (_ _ : Nat) : Nat
+    | true, t, _ => t
+    | false, _, f => f
+
+\func mod (x y : Nat) : Nat => x - (div x y * y)
+
+\func modTest1 : mod 3 3 = 0 => idp
+\func modTest2 : mod 3 2 = 1 => idp
+\func modTest3 : mod 3 4 = 3 => idp
+
+\func gcd (x y : Nat) => aux x x y
+    \where {
+        \func aux (fuel x y : Nat) : Nat \elim fuel
+            | 0 => 0
+            | suc fuel => ifn (y == zero) x (aux fuel y (mod x y))
+    }
+
+
+\func gcdTest1 : gcd 2 2 = 2 => idp
+\func gcdTest2 : gcd 4 2 = 2 => idp
+\func gcdTest3 : gcd 12 8 = 4 => idp
+\func gcdTest4 : gcd 56 21 = 7 => idp
