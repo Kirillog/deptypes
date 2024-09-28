@@ -35,3 +35,6 @@ fabric.properties
 .nfs*
 
 /bin
+.envrc
+.direnv/**
+root*
