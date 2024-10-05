@@ -166,6 +166,13 @@
   | con2 x1 x2 => con2 x1 x2 (D-elim P con1 con2 con3 x1) (D-elim P con1 con2 con3 x2)
   | con3 f => con3 f (\lam n => D-elim P con1 con2 con3 $ f n)
 
+\func D-rec (P : \Type)
+            (con1 : Nat -> P)
+            (con2 : D -> D -> P -> P -> P)
+            (con3 : (Nat -> D) -> (Nat -> P) -> P)
+            (d : D) : P
+  => D-elim (\lam _ => P) con1 con2 con3 d
+
 {- Для проверки, что определения D-elim и D-rec верные, вы можете попробовать определить foo через D-rec -}
 \func foo (d : D) : Nat
   | con1 n => n
