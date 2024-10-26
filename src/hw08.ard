@@ -1,7 +1,15 @@
+\import Arith.Nat
 \import Data.Bool
 \import Data.List \hiding (headDef)
+\import Data.Or
+\import Function.Meta
+\import Logic.Meta
+\import Meta
+\import Paths
+\import Paths.Meta
+\import hw05
 \import hw07
-\import lect08
+\import lect08 (Insertion, Perm, Sorted, sorted-cons, sorted-nil)
 \import Order.LinearOrder
 \open LinearOrder
 
@@ -10,15 +18,118 @@
 --    * Все элементы filter p xs удовлетворяют предикату p
 --    * Любой подсписок xs с тем же свойством является подсписком filter p xs
 
+\data SatisfyPred {A : \Type} (p : A -> Bool) (xs : List A) \elim xs
+  | nil => satisfy-pred-nil
+  | x :: xs => satisfy-pred-tail (p x = true) (SatisfyPred p xs)
+
+\func filter {A : \Type} (p : A -> Bool) (xs : List A) : List A \elim xs
+  | nil => nil
+  | a :: xs => cases (p a) \with {
+    | false => filter p xs
+    | true => a :: filter p xs
+  }
+
+\func filter-sublist {A : \Type} (p : A -> Bool) (xs : List A) : SubList (filter p xs) xs \elim xs
+  | nil => sub-nil
+  | a :: xs => cases (p a) \with {
+    | false => sub-tail $ filter-sublist p xs
+    | true => sub-step idp $ filter-sublist p xs
+  }
+
+\func filter-correct {A : \Type} (p : A -> Bool) (xs : List A) : SatisfyPred p (filter p xs) \elim xs
+  | nil => satisfy-pred-nil
+  | a :: xs => cases (p a arg addPath) \with {
+    | false, q => filter-correct p xs
+    | true, q => satisfy-pred-tail q $ filter-correct p xs
+  }
+
+\func filter-sublist-correct {A : \Type} (p : A -> Bool) (xs ys : List A) (q : SubList ys xs) (r : SatisfyPred p ys) : SubList ys (filter p xs) \elim xs, ys, q, r
+  | _, nil, _, _ => sub-nil
+  | x :: xs, ys, sub-tail q, r1 => cases (p x) \with {
+    | false => filter-sublist-correct p xs ys q r1
+    | true => sub-tail $ filter-sublist-correct p xs ys q r1
+  }
+  | x :: xs, y :: ys, sub-step p1 q, satisfy-pred-tail p2 r1 => cases (p x arg addPath) \with {
+    | false, s => \have p2 => rewrite p1 p2 \in contradiction
+    | true, s => sub-step p1 $ filter-sublist-correct p xs ys q r1
+  }
+
 -- 2. Докажите, что Perm l1 l2 тогда и только тогда, когда Insertion.sort l1 = Insertion.sort l2
+
+\open Insertion
+\open Insertion.sort
+\open Perm
+
+\func PermEqSort {A : Dec} (l1 l2 : List A) : Perm l1 l2 <-> (sort l1 = sort l2) =>
+  (PermToSort l1 l2, SortToPerm l1 l2)
+  \where {
+    \func PermToSort (l1 l2 : List A) (q : Perm l1 l2) : sort l1 = sort l2 \elim l1, l2, q
+      | nil, nil, perm-nil => idp
+      | x :: l3, y :: l4, perm-cons p q => rewrite p $ pmap (insert y) $ PermToSort l3 l4 q
+      | x :: (x' :: l3), y :: (y' :: l4), perm-swap p p1 p2 => rewrite (p, p1, p2) (insert-comm y' y (sort l4))
+      | l3, l4, perm-trans q1 q2 => PermToSort l3 _ q1 *> PermToSort _ l4 q2
+    \where {
+      -- We need more generic lemma instead of sort.insert-comm
+      \lemma insert-comm {A : Dec} (a b : A) (l : List A)
+        : insert a (insert b l) = insert b (insert a l)
+        => \case trichotomy a b \with {
+          | less a<b => aux a<b l
+          | equals p => rewrite p idp
+          | greater a>b => inv $ aux a>b l
+        }
+        \where {
+          \lemma aux {A : Dec} {a b : A} (a<b : a A.< b) (l : List A)
+            : insert a (insert b l) = insert b (insert a l) \elim l
+            | nil => rewrite (dec<_reduce a<b, dec<=_reduce (<_<= a<b)) idp
+            | a1 :: l3 => repeat {4} mcases (idp <|> contradiction <|> pmap (a1 ::) (aux a<b l3))
+        }
+    }
+
+    \func perm-comm (xs ys : List A) (p : Perm xs ys) : Perm ys xs \elim xs, ys, p
+      | nil, nil, perm-nil => perm-nil
+      | x :: xs, y :: ys, perm-cons p p1 => perm-cons (inv p) $ perm-comm xs ys p1
+      | x :: (x' :: xs), y :: (y' :: ys), perm-swap p p1 p2 => rewrite (p, p1, p2) (perm-swap idp idp idp)
+      | xs, ys, perm-trans p1 p2 => perm-trans (perm-comm _ ys p2) (perm-comm xs _ p1)
+
+    \func SortToPerm (l1 l2 : List A) (q : sort l1 = sort l2) : Perm l1 l2 =>
+      perm-trans (sort-perm l1) $ rewrite q $ perm-comm _ _ (sort-perm l2)
+  }
 
 -- 3. Докажите, что спецификация "результат является перестановкой входа и отсортирован" является полной для функции sort
 
 \func completeness {A : Dec} (sort : List A -> List A) (l : List A) (p : Perm l (sort l)) (s : Sorted (sort l))
-  : sort l = Insertion.sort l => {?}
+  : sort l = Insertion.sort l =>
+    rewriteI (specialize-sort (sort l) s) (PermEqSort.PermToSort (sort l) l $ PermEqSort.perm-comm _ _ p)
+  \where {
+    \lemma specialize-sort (l : List A) (s : Sorted l) : Insertion.sort l = l \elim l, s
+      | nil, sorted-nil => idp
+      | x :: l1, sorted-cons x<= s1 => rewrite (specialize-sort l1 s1) (cases (l1 arg addPath) \with {
+        | nil, p1 => idp
+        | a :: x1, p1 => cases (dec<_<= a x) \with {
+          | inl a1 => \have contra => rewrite p1 x<= \in contradiction
+          | inr b => idp
+        }
+      })
+  }
+\open Nat(*, -, +)
+\open NatSemiring
 
 -- 4. Определите факториал через хвостовую рекурсию
 --    Докажите, что он равен обычному определению факториала
+\func factorial (n : Nat) => aux n 1
+  \where {
+    \func aux (n : Nat) (acc : Nat) : Nat \elim n
+      | 0 => acc
+      | suc n1 => aux n1 (acc * suc n1)
+  }
+
+\func factorial-correct : factorial = fac
+  => ext \lam n => aux n 1 *> ide-left
+  \where {
+    \func aux (n acc : Nat) : factorial.aux n acc = acc * fac n  \elim n
+      | 0 => idp
+      | suc n => aux n _ *> rewriteI *-assoc idp
+  }
 
 -- 5. Определите функцию, которая проверяет правильность скобочной последовательности
 --    Докажите ее корректность
@@ -26,7 +137,15 @@
 \data Paren | Left | Right
 
 \func isBalanced (xs : List Paren) : Bool
-  => {?}
+  => balance xs 0
+  \where {
+    \func balance (xs : List Paren) (n : Nat) : Bool
+      | nil, 0 => true
+      | nil, suc _ => false
+      | Left :: xs, n  => balance xs $ n + 1
+      | Right :: xs, 0 => false
+      | Right :: xs, suc n => balance xs n
+  }
 
 \data Balanced (xs : List Paren) \with
   | nil => nil-balanced
