@@ -1,46 +1,169 @@
 \import Data.Maybe
-\import lect07 (Decide)
+\import Function.Meta
+\import Meta
+\import Paths
+\import Paths.Meta
+\import lect06 (fmap-comp)
+\import lect07 (Decide, no, yes)
 \import lect09
 
 -- 1. Докажите, что оператор >>= ассоциативен для Monad Term
 
 \func Term->>=-assoc {A B C : \Set} (t : Term A) (k : A -> Term B) (l : B -> Term C)
-  : t >>= k >>= l = {Term C} t >>= (\lam a => k a >>= l) => {?}
+  : t >>= k >>= l = {Term C} t >>= (\lam a => k a >>= l) \elim t
+  | unit => idp
+  | var v => idp
+  | app t1 t2 => \have  left => Term->>=-assoc t1 k l
+                      | right => Term->>=-assoc t2 k l
+                 \in pmap2 app left right
+  | lam t => pmap lam (>>=-assoc _ _ _ *> pmap (t >>=) (ext $ \case \elim __ \with {
+    | nothing => idp
+    | just a => termMap->>=-ldistr _ _ _ *> (inv $ termMap->>=-rdistr _ _ _)
+  }))
+\where {
+  \func termMap-comm {A B C : \Set} (k : Term A) (f : A -> B) (g : B -> C)
+    : termMap g (termMap f k) = termMap (\lam a => g (f a)) k \elim k
+    | unit => idp
+    | var v => idp
+    | app k1 k2 => pmap2 app (termMap-comm _ _ _) (termMap-comm _ _ _)
+    | lam k1 => pmap lam (termMap-comm _ _ _ *> pmap (termMap __ k1) (ext $ \lam _ => inv $ fmap-comp _ _ _))
+
+  \func termMap->>=-rdistr {A B C : \Set} (k : Term A) (l : A -> Term B) (f : B -> C)
+    : termMap f (k >>= l) = k >>= (\lam a => termMap f (l a)) \elim k
+    | unit => idp
+    | var v => idp
+    | app k1 k2 => pmap2 app (termMap->>=-rdistr _ _ _) (termMap->>=-rdistr _ _ _)
+    | lam k1 => pmap lam (termMap->>=-rdistr _ _ _ *> (pmap (k1 >>=)
+      $ ext $ \case \elim __ \with {
+      | nothing => idp
+      | just a => termMap-comm _ _ _ *> (inv $ termMap-comm _ _ _)
+    }))
+
+  \func termMap->>=-ldistr {A B C : \Set} (k : Term A) (g : B -> Term C) (f : A -> B)
+    : termMap f k >>= g = k >>= (\lam a => g (f a)) \elim k
+    | unit => idp
+    | var v => idp
+    | app k1 k2 => pmap2 app (termMap->>=-ldistr _ _ _) (termMap->>=-ldistr _ _ _)
+    | lam k1 => pmap lam (termMap->>=-ldistr _ _ _ *> (pmap (k1 >>=)
+       $ ext $ \case \elim __ \with {
+      | nothing => idp
+      | just a => idp
+    }))
+}
 
 -- 2. Определите отношение многошаговой редукции на Term
 
-\func Red {V : \Set} (t s : Term V) : \Type => {?}
+\func Red {V : \Set} (t s : Term V) : \Type =>
+  R t s
+  \where {
+    \data R {V : \Set} (t s : Term V)
+      | step0 (t = s)
+      | step (q : Term V) (Red1 t q) (R q s)
+  }
+
 
 -- 3. Стратегия редукции -- это функция, которая каждому терму сопоставляет либо некоторый терм,
 --    к которому он редуцируется за 1 шаг, либо доказательство, что таких термов нет
 --    Определите любую стратегию редукции
 
-\func strategy {V : \Set} (t : Term V) : Decide (\Sigma (s : Term V) (Red1 t s)) => {?}
+\func strategy {V : \Set} (t : Term V) : Decide (\Sigma (s : Term V) (Red1 t s)) \elim t
+  | unit => no (\lam f => cases f.2)
+  | var v => no (\lam f => cases f.2)
+  | app t1 t2 => cases (strategy t1, strategy t2) \with {
+    | yes (s, r), _ => yes (app s t2, red-left r idp)
+    | no _, yes (s, r) => yes(app t1 s, red-right idp r)
+    | no _x, no _x1 => cases (t1 arg addPath) \with {
+      | unit, _ => no (\lam (s, r) => cases (s, r) \with {
+        | x, beta f () p2
+        | app x x1, red-left () p1
+        | app x x1, red-right p1 x2 => _x1 (x1, x2)
+      })
+      | var v, _ => no (\lam (s, r) => cases (s, r) \with {
+        | x, beta f () p2
+        | app x x1, red-left () p1
+        | app x x1, red-right p1 x2 => _x1 (x1, x2)
+      })
+      | app _ _, p => no (\lam (s, r) => cases (s, r) \with {
+        | x, beta f () p2
+        | app x x3, red-left x4 p1 => _x (x, rewrite p x4)
+        | app x x3, red-right p1 x4 => _x1 (x3, x4)
+      })
+      | lam x, p => yes (x >>= maybe t2 var, beta x idp idp)
+    }
+  }
+  | lam t => cases (strategy t) \with {
+    | yes (s, r) => yes (lam s, red-lam r)
+    | no _x => no \lam (s, r) => cases (s, r) \with {
+      | lam s, red-lam r => _x (s, r)
+    }
+  }
 
 -- 4. Докажите, что подтермы достижимого терма достижимы
 
-\func appAccLeft {V : \Set} {t s : Term V} (a : Acc Red1 (app t s)) : Acc Red1 t
-  => {?}
+\func appAccLeft {V : \Set} {t s : Term V} (a : Acc Red1 (app t s)) : Acc Red1 t \elim a
+  | acc f => acc (\lam a' r => appAccLeft $ f (app a' s) (red-left r idp))
 
-\func appAccRight {V : \Set} {t s : Term V} (a : Acc Red1 (app t s)) : Acc Red1 s
-  => {?}
+\func appAccRight {V : \Set} {t s : Term V} (a : Acc Red1 (app t s)) : Acc Red1 s \elim a
+  | acc f => acc (\lam a' r => appAccRight $ f (app t a') (red-right idp r))
 
-\func subLamAcc {V : \Set} {t : Term (Maybe V)} (a : Acc Red1 (lam t)) : Acc Red1 t
-  => {?}
+\func subLamAcc {V : \Set} {t : Term (Maybe V)} (a : Acc Red1 (lam t)) : Acc Red1 t \elim a
+  | acc f => acc (\lam a' r => subLamAcc $ f (lam a') (red-lam r))
 
 -- 5. Докажите следующую обобщенную лемму о подстановке и выведите из нее обычную версию:
 --    если Г, x : A |- b : B и Г |- a : A, то Г |- b[a/x] : B
 
 \func substLem {U V : \Set} (ctx : U -> Type) (b : Term U) (B : Type) (h : hasType ctx b B)
                (ctx' : V -> Type) (a : U -> Term V) (h' : \Pi (u : U) -> hasType ctx' (a u) (ctx u))
-  : hasType ctx' (b >>= a) B => {?}
+  : hasType ctx' (b >>= a) B \elim b, B, h
+  | unit, Unit, unit-type => unit-type
+  | var v, B, var-type p => rewriteI p (h' v)
+  | app b b1, B, app-type T h1 h2 => app-type T (substLem _ _ _ h1 _ _ h') (substLem _ _ _ h2 _ _ h')
+  | lam b, Arr B1 B2, lam-type h => lam-type $ substLem (maybe B1 ctx) _ _ h _ _ $ \case \elim __ \with {
+    | nothing => unfold liftM (var-type idp)
+    | just a1 => unfold liftM (termMapSaveType _ _ _ (h' a1) _ _ (\lam _ => idp))
+  }
+\where {
+  \func termMapSaveType {U V : \Set} (ctx : V -> Type) (b : Term V) (B : Type) (h : hasType ctx b B) (ctx' : U -> Type)
+                        (f : V -> U) (h' : \Pi (v : V) -> ctx' (f v) = ctx v)
+    : hasType ctx' (termMap f b) B \elim b, B, h
+    | unit, Unit, unit-type => unit-type
+    | var v, B, var-type p1 => var-type $ rewriteI p1 $ h' v
+    | app b b1, B, app-type T h1 h2 => app-type T (termMapSaveType _ _ _ h1 _ _ h') (termMapSaveType _ _ _ h2 _ _ h')
+    | lam b, Arr B B1, lam-type h => lam-type (termMapSaveType _ _ _ h _ _ $ \case \elim __ \with {
+      | nothing => idp
+      | just a1 => h' a1
+    } )
+}
 
-\func substLem1 => {?}
+\func substLem1 {V : \Set} (ctx : V -> Type) (a : Term V) (b : Term (Maybe V))
+                (A B : Type)
+                (h : hasType (maybe A ctx) b B)
+                (g : hasType ctx a A)
+  : hasType ctx (b >>= maybe a var) B
+  => substLem (maybe A ctx) _ _ h _ _ $ \case \elim __ \with {
+    | nothing => g
+    | just _ => var-type idp
+  }
 
 -- 6. Докажите, что если Г |- a : A и Red a a', то Г |- a' : A
 
 \func redLem {V : \Set} {ctx : V -> Type} {a a' : Term V} (r : Red a a') {A : Type} (h : hasType ctx a A)
-  : hasType ctx a' A => {?}
+  : hasType ctx a' A \elim r
+  | Red.step0 p => rewriteI p h
+  | Red.step q r r1 => redLem r1 (redLemStep _ _ _ r _ h)
+  \where {
+    \func redLemAppStep {V : \Set} (ctx : V -> Type) (b2 a' : Term V) (f : Term (Maybe V)) (A B : Type)
+                        (h1 : hasType ctx (lam f) (Arr B A)) (hb : hasType ctx b2 B)
+      : hasType ctx (f >>= maybe b2 var) A
+      | ctx, _, _, f, A, B, lam-type h1, l => substLem1 ctx _ _ B _ h1 l
+
+    \func redLemStep {V : \Set} (ctx : V -> Type) (a a' : Term V) (r1 : Red1 a a') (A : Type) (h : hasType ctx a A)
+      : hasType ctx a' A \elim a, a', r1, A, h
+      | app a1 b2, _, beta f idp p1, A, app-type B h1 h2 => rewrite p1 (redLemAppStep _ _ a1 _ _ _ h1 h2)
+      | app a1 a2, app a'1 a'2, red-left r1 idp, A1, app-type T h1 h2 => app-type T (redLemStep _ _ _ r1 _ h1) h2
+      | app a1 a2, app a'1 a'2, red-right idp r1, A1, app-type T h1 h2 => app-type T h1 (redLemStep _ _ _ r1 _ h2)
+      | lam a1, lam a'1, red-lam r1, Arr A1 A2, lam-type h1 => lam-type (redLemStep _ _ _ r1 _ h1)
+  }
 
 -- Optional
 -- 7. Для доказательства typeableInterp понадобится вспомогательное утверждение. Докажите его.
