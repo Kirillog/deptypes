@@ -19,7 +19,7 @@
 \func Prop2 => \Sigma (A : \Type) (isProp A)
 
 \lemma pathInProp {A : \Prop} : isProp A
-  => prop-isProp -- в старой версии: Path.inProp
+  => Path.inProp -- в старой версии: Path.inProp
 
 -- В одну сторону легко построить функцию, так как любой элемент \Prop является типом и в прелюдии объявленая функция,
 -- утверждающая, что любой такой тип является утверждением
