@@ -1,29 +1,157 @@
+\import Data.Array
 \import Data.Bool
+\import Data.Or
 \import Function
+\import Function.Meta ($)
+\import Logic
+\import Meta
+\import Paths
+\import Paths.Meta
+\import Relation.Equivalence (~-equiv, in~)
 \import Set
-\import lect13
+\import lect13 \hiding (remove)
 
 -- 1. Докажите, что add x (add x s) = add x s и add x (add y s) = add y (add x s)
 
-\func add-idemp {S : SetSpec} (x : S.A) (s : S) : add x (add x s) = add x s => {?}
+\func add-idemp {S : SetSpec} (x : S.A) (s : S) : add x (add x s) = add x s =>
+  setExt (\lam _ => (\case addProp __ \with {
+    | byLeft q => rewrite q addHead
+    | byRight q => q
+  }, addTail))
 
-\func add-swap {S : SetSpec} (x y : S.A) (s : S) : add x (add y s) = add y (add x s) => {?}
+\func add-swap {S : SetSpec} (x y : S.A) (s : S) : add x (add y s) = add y (add x s) =>
+  setExt (\lam _ => (lem, lem))
+  \where {
+    \func lem {S : SetSpec} {x y a : S.A} {s : S} (p : isElem a (add y (add x s)))
+      : isElem a (add x (add y s)) =>
+      \case addProp p \with {
+        | byLeft q => rewrite q $ addTail addHead
+        | byRight q => \case addProp q \with {
+          | byLeft q' => rewrite q' addHead
+          | byRight q' => addTail $ addTail q'
+        }
+      }
+  }
 
 -- 2. Докажите, что множество подмножеств является инстансом SetSpec
 
-\instance subsets {A : \Set} : SetSpec {A} (A -> \Prop) => {?}
+\instance subsets {A : \Set} : SetSpec {A} (A -> \Prop)
+  | empty _ => Empty
+  | add x s a => (a = x) || s a
+  | isElem x s => s x
+  | setExt p => ext (ext $ p __)
+  | addHead => byLeft idp
+  | addTail p => byRight p
+  | addProp p => p
+  | emptyProp => id
 
 -- 3. Докажите, что множество подмножеств является наибольшим инстансом, то есть любой другой вкладывается в него
 
-\func subsets-largest (S : SetSpec) : \Sigma (f : S -> S.A -> \Prop) (isInj f) => {?}
+\func subsets-largest (S : SetSpec) : \Sigma (f : S -> S.A -> \Prop) (isInj f)
+  => (
+    \lam s a => isElem a s,
+    \lam p => setExt \lam a =>
+  ( \lam q => rewriteI (pmap (\lam h => h a) p) q
+  , \lam q => rewrite (pmap (\lam h => h a) p) q
+  ))
 
 -- 4. Определите функцию isEmpty для ArraySet и для произвольного конечного множества
 
-\func isEmptyArraySet {A : \Set} (xs : ArraySet A) : Bool => {?}
+\func EqArrayComm
+  {A : \Set} {xs ys : Array A}
+  (eq : EqArray xs ys)
+  : EqArray ys xs =>
+    \case eq __ \with {
+      (l, r) => (r, l)
+    }
 
-\func isEmptySet {S : FinSetSpec} (s : S) : Bool => {?}
+\func isEmptyArraySet {A : \Set} (xs : ArraySet A) : Bool \elim xs
+  | in~ a => \case a \with {
+    | nil => true
+    | a1 :: l => false
+  }
+  | ~-equiv x y r => cases (x arg addPath, y arg addPath) \with {
+    | nil, p, nil, p1 => idp
+    | a :: l, p, a1 :: l1, p1 => idp
+    | nil, p, a :: l, p1 => \have eq => rewrite (p, p1) r \in absurd $ nilNeqCons eq
+    | a :: l, p, nil, p1 => \have eq => rewrite (p, p1) (EqArrayComm r) \in absurd $ nilNeqCons eq
+  }
+
+\where {
+  \func nilNeqCons {A : \Set} {a : A} {arr : Array A} (eq : EqArray nil (a :: arr)) : Empty =>
+    \let   aInArr : In a (a :: arr) => inP (zero, idp)
+         | aInNil : In a nil => (eq a).2 aInArr
+    \in \case aInNil \with {
+      | inP (ind, eq) => \case ind
+    }
+}
+
+\func isEmptySet {S : FinSetSpec} (s : S) : Bool =>
+  \let eq => rewrite (inv $ arraySet=Set {S}) s
+  \in isEmptyArraySet eq
 
 -- 5. Определите функцию union {A : \Set} : S -> S -> S для ArraySet и для произвольного S (удовлетворяющего FinSetSpec)
+
+\func unionSetArray {A : \Set} (a1 a2 : ArraySet A) : ArraySet A \elim a1, a2
+  | in~ a, in~ a1 => in~ $ a ++ a1
+  | in~ a, ~-equiv x y r => setExt (\lam _ => concatInComm r)
+  | ~-equiv x y r, in~ a => setExt (\lam _ => rewrite (concatInRev x a, concatInRev y a) (concatInComm r))
+\where {
+  \func concatInComm
+    {A : \Set} {a x y : Array A} {a1 : A}
+    (eq : EqArray x y) : In a1 (a ++ x) <-> In a1 (a ++ y) =>
+    (transIn eq, transIn $ EqArrayComm eq)
+
+  \func transIn
+    {A : \Set} {a x y : Array A} {a1 : A}
+    (eq : EqArray x y) (in : In a1 (a ++ x)) : In a1 (a ++ y) =>
+    concatInOr.2 $ \case concatInOr.1 in \with {
+        | byLeft a2 => byLeft a2
+        | byRight b => byRight $ (eq a1).1 b
+      }
+
+  \func concatInOr {A : \Set} {x y : Array A} {a : A}
+     : In a (x ++ y) <-> In a x || In a y =>
+    (\case __ \with {
+      | inP (ind, eq) => \case ++.split-index ind \with {
+        | inl (ind1, eq1) => byLeft $ inP (
+          ind1,
+          \have eq2 => inv $ ++.++_index-left ind1
+          \in eq2 *> pmap (x ++ y) (inv eq1) <* eq)
+        | inr (ind1, eq1) => byRight $ inP (
+          ind1,
+          \have eq2 => inv $ ++.++_index-right {A} {x} {y} {ind1}
+          \in eq2 *> pmap (x ++ y) (inv eq1) <* eq
+        )
+      }
+    },
+    \case __ \with {
+      | byLeft a1 => \case \elim a1 \with {
+        | inP (ind, eq) => inP (++.index-left ind, ++.++_index-left ind <* eq)
+      }
+      | byRight b => \case \elim b \with {
+        | inP (ind, eq) => inP (++.index-right ind, ++.++_index-right <* eq)
+      }
+    })
+
+  \lemma concatInRev
+    {A : \Set} (x y : Array A) {a : A}
+    : In a (x ++ y) = In a (y ++ x) => propExt (concatInRevExt __) (concatInRevExt __)
+
+  \func concatInRevExt
+    {A : \Set} {x y : Array A} {a : A}
+    (in : In a (x ++ y))
+    : In a (y ++ x) => concatInOr.2 $ \case concatInOr.1 in \with {
+    | byLeft a1 => byRight a1
+    | byRight b => byLeft b
+  }
+}
+
+\func union {S : FinSetSpec} (a1 a2 : S) : S =>
+    \let
+      | arrayA1 => rewriteI (arraySet=Set {S}) a1
+      | arrayA2 => rewriteI (arraySet=Set {S}) a2
+    \in  rewriteI arraySet=Set $ unionSetArray arrayA1 arrayA2
 
 -- 6. Определите функцию intersection {A : DecSet} : S -> S -> S для ArraySet и для произвольного S (удовлетворяющего FinSetSpec)
 
